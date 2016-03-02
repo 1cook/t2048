@@ -17,15 +17,9 @@
 #include<alloc.h>
 #include<string.h>
 #include<system.h>
-#include<vat.h>
-#include<timath.h>
 
-#define COMMENT_STRING "The sliding puzzle game"
-#define COMMENT_PROGRAM_NAME "2048"
-#define VERSION_STRING "1.1"
-#define VERSION_NUMBER 1,1,0,0
-#define AUTHORS "Harrison Cook"
-
+void drawGrid(char gridIn[4][4]);
+void pushNewTile(char gridIn[4][4]);
 	
 char *scoreString = NULL;
 HANDLE pauseMenu = H_NULL;
@@ -99,15 +93,6 @@ char readSave(SAVE *saveFile){
 		exit(ER_PROTECTED);
 	}
 	fclose(f);
-	
-	//Validate the data from the file
-	char x,y;
-	for(x=0; x<=3; x++){
-		for(y=0; y<=3; y++){
-			if((saveFile->grid[x][y] < 0) || (saveFile->grid[x][y] > 17))
-				exit(ER_PROTECTED);
-		}
-	}
 	
 	return 0;
 }
@@ -195,7 +180,7 @@ char shiftTile(char gridIn[4][4], char row, char col, char direction, unsigned l
 		if(gridIn[xPos][yPos] > 17)
 			memkill(0,ER_OVERFLOW);
 			/*This game does not support going over 2^17 = 131072
-			and you can't exceed that value in a normal game anyways
+			and you can't exceed that value in a normal game anyways.
 			this check prevents accessing bad memory*/
 		*score += (1 << (unsigned long int)gridIn[xPos][yPos]);
 		isGridCompleted[xPos][yPos] = 1;
@@ -235,8 +220,7 @@ const unsigned char RightX[] = {39,78,119,158};
 const unsigned char TopY[] = {4,26,48,70};
 const unsigned char BottomY[] = {22,44,66,88};
 
-//draws the box on the screen
-void drawBox(char col, char row, char direction, char shift, char value,short attr){
+WIN_RECT mkBox(char row, char col, char direction, char shift){
 	unsigned char Xmodifier = (shiftX[direction]*shift);
 	unsigned char Ymodifier = (shiftY[direction]*shift);
 	unsigned char lx = LeftX[row]+Xmodifier;
@@ -244,24 +228,28 @@ void drawBox(char col, char row, char direction, char shift, char value,short at
 	unsigned char ty = TopY[col]+Ymodifier;
 	unsigned char by = BottomY[col]+Ymodifier;
 
-	DrawLine(lx,ty,lx,by, attr);
-	DrawLine(lx,ty,rx,ty, attr);
-	DrawLine(rx,ty,rx,by,attr);
-	DrawLine(lx,by,rx,by,attr);
+	return (WIN_RECT){lx,ty,rx,by};
+	
+}
+
+//draws the box on the screen
+void drawBox(WIN_RECT box, char value){
+	DrawClipRect(&box,ScrRect,A_NORMAL);
+
 	if(value == 17)
 		FontSetSys(F_4x6);//Make Text even more smaller for even more bigger numbers
 	else if(value>13)
 		FontSetSys(F_6x8);//Make text smaller for bigger numbers
-	DrawStr(lx+2, ty+2, strConv[value],attr);
+	if(value > 17)
+			memkill(0,ER_OVERFLOW);
+			/*This game does not support going over 2^17 = 131072
+			and you can't exceed that value in a normal game anyways.
+			this check prevents accessing bad memory*/
+	DrawStr((box.x0)+2, (box.y0)+5, strConv[value], A_NORMAL);
 	FontSetSys(F_8x10);
 }
 
 //clears the area on the screen with the box
-void clearBox(char col, char row, char direction, char shift){
-	char Xmodifier = (shiftX[direction]*shift); char Ymodifier = (shiftY[direction]*shift);
-	SCR_RECT *s = &(SCR_RECT){{LeftX[row]+Xmodifier,TopY[col]+Ymodifier,RightX[row]+Xmodifier,BottomY[col]+Ymodifier}};
-	ScrRectFill(s,ScrRect,A_REVERSE);
-}
 //number of pixels to move in each direction
 const char directionShift[] = {22,39,22,39};
 
@@ -269,14 +257,17 @@ const char directionShift[] = {22,39,22,39};
 
 /*warning, only set amount up to the number of tile movements you have specified in frame,
 otherwise you might get garbled stuff on the screen*/
-void playFrame(MOVE frame[12], char direction, char amount){
+void playFrame(MOVE frame[], char direction, char amount){
 	char id, currentFrame;
+	WIN_RECT boxes[amount];
 	for(currentFrame = 0; currentFrame <= directionShift[direction]; currentFrame++){
 		for(id = 0; id< amount; id++){
-			drawBox(frame[id].xFrom,frame[id].yFrom, direction, currentFrame, frame[id].beforeValue,A_NORMAL);
+			WIN_RECT s = mkBox(frame[id].yFrom,frame[id].xFrom, direction, currentFrame);
+			boxes[id] = s; 
+			drawBox(s,frame[id].beforeValue);
 		}
 		for(id = 0; id< amount; id++){
-			clearBox(frame[id].xFrom,frame[id].yFrom, direction, currentFrame);
+			ScrRectFill(&(SCR_RECT){{boxes[id].x0,boxes[id].y0,boxes[id].x1,boxes[id].y1}},ScrRect,A_REVERSE);
 		}
 	}
 }
@@ -321,8 +312,8 @@ void drawGrid(char gridIn[4][4]){
 	char row, col;
 	for(row=0; row<=3; row++){
 		for(col=0; col<=3; col++){
-			if(gridIn[row][col] != 0){
-				drawBox(row,col,0,0,gridIn[row][col], A_NORMAL);
+			if(gridIn[row][col] > 0){
+				drawBox(mkBox(col,row, 0, 0),gridIn[row][col]);
 			}
 		}
 	}
@@ -388,7 +379,6 @@ void _main( void ){
 	for(;;){
 		ClrScr();
 		drawGrid(gameState.grid);
-		//DrawLine(0,LCD_HEIGHT-7,LCD_WIDTH,LCD_HEIGHT-7,A_NORMAL);
 		sprintf(scoreString, "Score: %lu Hiscore: %lu by %s", gameState.score, gameState.bscore, gameState.name);
 		if(!isGridAvailable(gameState.grid)){
 			
@@ -409,6 +399,7 @@ void _main( void ){
 			}
 		}
 		ST_helpMsg(scoreString);
+		nodraw:
 		ST_busy(ST_IDLE);
 		key = ngetchx();
 		ST_busy(ST_BUSY);
@@ -451,9 +442,12 @@ void _main( void ){
 					break;
 			}
 		}
-		if(move != 4 && isDirectionAvailable(gameState.grid, move)){
-			shiftGrid(gameState.grid,move,&gameState.score, gameState.animations);
-			pushNewTile(gameState.grid);
+		if(move < 4){
+			if(isDirectionAvailable(gameState.grid, move)){
+				shiftGrid(gameState.grid,move,&gameState.score, gameState.animations);
+				pushNewTile(gameState.grid);
+			}
+			else goto nodraw;
 		}
 	}
 }
