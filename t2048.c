@@ -1,6 +1,9 @@
 #define OPTIMIZE_ROM_CALLS
-#define USE_TI89
 #define NO_CALC_DETECT
+#define USE_TI89
+#define USE_TI92PLUS
+#define USE_V200
+#define OPTIMIZE_CALC_CONSTS
 #define SAVE_SCREEN
 
 #include<stdio.h>
@@ -17,6 +20,8 @@
 #include<alloc.h>
 #include<string.h>
 #include<system.h>
+#include<compat.h>
+#include<flash.h>
 
 void drawGrid(char gridIn[4][4]);
 void pushNewTile(char gridIn[4][4]);
@@ -240,8 +245,6 @@ void drawBox(WIN_RECT box, char value){
 		FontSetSys(F_4x6);//Make Text even more smaller for even more bigger numbers
 	else if(value>13)
 		FontSetSys(F_6x8);//Make text smaller for bigger numbers
-	if(value > 17)
-			memkill(0,ER_OVERFLOW);
 			/*This game does not support going over 2^17 = 131072
 			and you can't exceed that value in a normal game anyways.
 			this check prevents accessing bad memory*/
@@ -292,10 +295,11 @@ void shiftGrid(char gridIn[4][4], char direction, unsigned long int *score, char
 		currentMove = 0;
 		for(xPos = start; (xPos>=0) && (xPos <= 3); xPos += change){
 			for(yPos = start; (yPos>=0) && (yPos <= 3); yPos += change){
+				char prevn = gridIn[xPos][yPos];
 				if(shiftTile(gridIn,xPos,yPos,direction,score,isGridCompleted)){
 					frame[currentMove].xFrom = xPos;
 					frame[currentMove].yFrom = yPos;
-					frame[currentMove].beforeValue = gridIn[xPos][yPos];
+					frame[currentMove].beforeValue = prevn;
 					currentMove++;
 				}
 			}
@@ -313,6 +317,8 @@ void drawGrid(char gridIn[4][4]){
 	for(row=0; row<=3; row++){
 		for(col=0; col<=3; col++){
 			if(gridIn[row][col] > 0){
+				if(gridIn[row][col] > 17)
+					memkill(0,ER_OVERFLOW);
 				drawBox(mkBox(col,row, 0, 0),gridIn[row][col]);
 			}
 		}
@@ -442,6 +448,7 @@ void _main( void ){
 					break;
 			}
 		}
+		else goto nodraw;
 		if(move < 4){
 			if(isDirectionAvailable(gameState.grid, move)){
 				shiftGrid(gameState.grid,move,&gameState.score, gameState.animations);
